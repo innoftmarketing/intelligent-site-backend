@@ -5,23 +5,16 @@ export const generateImageTool: ToolDefinition = {
   spec: {
     name: "generate_image",
     description:
-      "Generate a new image using AI from a text description. The image will be uploaded to WordPress and you'll get a URL back. After generating, send a preview via send_whatsapp and wait for approval.",
+      "Generate a new image using AI from a text description. The image will be uploaded to WordPress and a preview will be sent to the owner via WhatsApp automatically. After calling this tool, ask the owner for approval using send_whatsapp (text only, no image_url needed — the preview was already sent).",
     input_schema: {
       type: "object",
       properties: {
         prompt: {
           type: "string",
-          description:
-            "Detailed image description including style, colors, text, and mood",
+          description: "Detailed image description including style, colors, text, and mood",
         },
-        width: {
-          type: "number",
-          description: "Width in pixels (default 1920)",
-        },
-        height: {
-          type: "number",
-          description: "Height in pixels (default 1080)",
-        },
+        width: { type: "number", description: "Width in pixels (default 1920)" },
+        height: { type: "number", description: "Height in pixels (default 1080)" },
       },
       required: ["prompt"],
     },
@@ -34,17 +27,22 @@ export const generateImageTool: ToolDefinition = {
       height: (input.height as number) ?? 1080,
     });
 
-    // Upload the base64 image to WordPress to get a real URL
-    // First convert data URL to a temporary file URL by uploading to WP media
+    // Upload to WordPress to get a permanent URL
     const timestamp = Date.now();
     const filename = `generated-${timestamp}.jpg`;
-
-    // Upload via WordPress plugin — it accepts base64 data URLs
     const uploaded = await ctx.wp.uploadMedia(dataUrl, filename);
+
+    // Send the image preview directly to the owner via WhatsApp
+    await ctx.whatsapp.sendImage(
+      ctx.clientPhone,
+      uploaded.url,
+      "Here's the generated image preview:"
+    );
 
     return JSON.stringify({
       image_url: uploaded.url,
       media_id: uploaded.mediaId,
+      preview_sent: true,
     });
   },
 };
