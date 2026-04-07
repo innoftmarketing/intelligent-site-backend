@@ -15,9 +15,9 @@ export interface ToolDefinition {
   execute: (input: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 
-import { getPageContentTool } from "./get-page-content.js";
-import { getProductsTool } from "./get-products.js";
-import { getSiteStructureTool } from "./get-site-structure.js";
+import { get_page_contentTool } from "./get-page-content.js";
+import { get_productsTool } from "./get-products.js";
+import { get_site_structureTool } from "./get-site-structure.js";
 import { updateTextTool } from "./update-text.js";
 import { updateImageTool } from "./update-image.js";
 import { updateProductTool } from "./update-product.js";
@@ -26,7 +26,7 @@ import { uploadMediaTool } from "./upload-media.js";
 import { sendWhatsappTool } from "./send-whatsapp.js";
 
 export const ALL_TOOLS: ToolDefinition[] = [
-  getPageContentTool, getProductsTool, getSiteStructureTool,
+  get_page_contentTool, get_productsTool, get_site_structureTool,
   updateTextTool, updateImageTool, updateProductTool,
   generateImageTool, uploadMediaTool, sendWhatsappTool,
 ];

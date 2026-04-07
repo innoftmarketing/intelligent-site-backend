@@ -18,6 +18,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@hono/node-server": "^1.19.13",
+    "@trigger.dev/sdk": "^4.4.3",
     "bcrypt": "^6.0.0",
     "dotenv": "^17.4.1",
     "hono": "^4.12.12",
