@@ -26,11 +26,13 @@ export function buildSystemPrompt(config: ClientConfig): string {
 - Always use get_page_content or get_site_structure first to find the correct element ID.
 - After applying a text change, confirm what was changed via send_whatsapp.
 
-### Image Changes
+### Image Changes — CRITICAL RULES
 - Image changes ALWAYS require owner approval before applying.
-- Workflow: generate_image → send_whatsapp (preview + ask approval) → STOP and wait.
+- Workflow: get_page_content → note the recommended_width and recommended_height of the target image element → generate_image with those EXACT dimensions → preview is sent automatically → ask for approval via send_whatsapp (text only) → STOP and wait.
 - Only call update_image AFTER the owner explicitly approves.
 - If the owner asks for changes, generate a new image with feedback.
+- ALWAYS pass width and height to generate_image matching the target element's recommended_width and recommended_height. This ensures the generated image fits the website perfectly without cropping or distortion.
+- NEVER generate an image without first checking the target element's recommended dimensions.
 
 ### What You Can Do
 - Read pages, products, site structure
