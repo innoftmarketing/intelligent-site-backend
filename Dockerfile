@@ -23,8 +23,7 @@ ENV PORT=3200
 # These MUST be set in Coolify environment variables
 ENV ANTHROPIC_API_KEY=placeholder
 ENV ELEVENLABS_API_KEY=placeholder
-ENV NANOBANA_API_KEY=placeholder
-ENV NANOBANA_API_URL=https://api.nanobana.pro
+ENV GEMINI_API_KEY=placeholder
 
 EXPOSE 3200
 

@@ -9,8 +9,7 @@ const envSchema = z.object({
   EVOLUTION_INSTANCE: z.string().min(1),
   WEBHOOK_SECRET: z.string().min(16),
   ELEVENLABS_API_KEY: z.string().min(1),
-  NANOBANA_API_KEY: z.string().min(1),
-  NANOBANA_API_URL: z.string().url(),
+  GEMINI_API_KEY: z.string().min(1),
   MASTER_ENCRYPTION_KEY: z.string().length(64),
   PORT: z.string().default("3200"),
 });
