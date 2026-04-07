@@ -1,5 +1,4 @@
 import { z } from "zod";
-import "dotenv/config";
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -14,4 +13,19 @@ const envSchema = z.object({
   PORT: z.string().default("3200"),
 });
 
-export const env = envSchema.parse(process.env);
+type Env = z.infer<typeof envSchema>;
+
+let _env: Env | null = null;
+
+function getEnv(): Env {
+  if (!_env) {
+    _env = envSchema.parse(process.env);
+  }
+  return _env;
+}
+
+export const env = new Proxy({} as Env, {
+  get(_, prop: string) {
+    return getEnv()[prop as keyof Env];
+  },
+});
