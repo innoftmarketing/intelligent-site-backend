@@ -1,10 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { env } from "../env.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { getToolSpecs, findTool, type ToolContext } from "./tools/index.js";
 import { updateConversation } from "../services/conversation.js";
 
-const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!_anthropic) {
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+  }
+  return _anthropic;
+}
 
 interface AgentInput {
   userMessage: string;
@@ -20,6 +25,7 @@ interface AgentResult {
 }
 
 export async function runAgent(input: AgentInput): Promise<AgentResult> {
+  const anthropic = getAnthropic();
   const systemPrompt = buildSystemPrompt(input.clientConfig);
   const tools = getToolSpecs();
   const messages: Anthropic.MessageParam[] = [

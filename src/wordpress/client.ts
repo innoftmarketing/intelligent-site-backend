@@ -1,5 +1,4 @@
 import { decrypt } from "../services/encryption.js";
-import { env } from "../env.js";
 
 interface PageElement {
   id: string;
@@ -35,8 +34,8 @@ export class WordPressClient {
 
   constructor(wordpressUrl: string, encryptedApiKey: string, encryptedApiSecret: string) {
     this.baseUrl = `${wordpressUrl}/wp-json/intelligent-site/v1`;
-    this.apiKey = decrypt(encryptedApiKey, env.MASTER_ENCRYPTION_KEY);
-    this.apiSecret = decrypt(encryptedApiSecret, env.MASTER_ENCRYPTION_KEY);
+    this.apiKey = decrypt(encryptedApiKey, process.env.MASTER_ENCRYPTION_KEY!);
+    this.apiSecret = decrypt(encryptedApiSecret, process.env.MASTER_ENCRYPTION_KEY!);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

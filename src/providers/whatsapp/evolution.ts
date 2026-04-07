@@ -1,12 +1,11 @@
 import { createHmac } from "node:crypto";
-import { env } from "../../env.js";
 import type { IncomingMessage, WhatsAppProvider } from "./types.js";
 
 export class EvolutionProvider implements WhatsAppProvider {
-  private baseUrl = env.EVOLUTION_API_URL;
-  private apiKey = env.EVOLUTION_API_KEY;
-  private instance = env.EVOLUTION_INSTANCE;
-  private webhookSecret = env.WEBHOOK_SECRET;
+  private get baseUrl() { return process.env.EVOLUTION_API_URL!; }
+  private get apiKey() { return process.env.EVOLUTION_API_KEY!; }
+  private get instance() { return process.env.EVOLUTION_INSTANCE!; }
+  private get webhookSecret() { return process.env.WEBHOOK_SECRET!; }
 
   parseWebhook(body: unknown): IncomingMessage | null {
     const data = body as Record<string, any>;

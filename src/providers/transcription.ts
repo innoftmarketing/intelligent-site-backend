@@ -1,5 +1,3 @@
-import { env } from "../env.js";
-
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const formData = new FormData();
   formData.append("file", new Blob([new Uint8Array(audioBuffer)], { type: "audio/ogg" }), "voice.ogg");
@@ -7,7 +5,7 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
 
   const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
     method: "POST",
-    headers: { "xi-api-key": env.ELEVENLABS_API_KEY },
+    headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! },
     body: formData,
   });
 
