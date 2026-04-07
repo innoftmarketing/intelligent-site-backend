@@ -1,4 +1,5 @@
 import { task } from "@trigger.dev/sdk";
+import { logger } from "@trigger.dev/sdk";
 import { EvolutionProvider } from "../providers/whatsapp/evolution.js";
 import { transcribeAudio } from "../providers/transcription.js";
 import { lookupClient, hasActiveSession, verifyPin } from "../services/auth.js";
@@ -13,6 +14,8 @@ export const processMessage = task({
   run: async (payload: { message: IncomingMessage }) => {
     const { message } = payload;
     const whatsapp = new EvolutionProvider();
+
+    logger.info("Message received", { from: message.from, type: message.type, text: message.text });
 
     const client = await lookupClient(message.from);
     if (!client) {
@@ -45,18 +48,33 @@ export const processMessage = task({
       userText = await transcribeAudio(audioBuffer);
     }
     if (!userText.trim()) {
-      await whatsapp.sendText(message.from, "I did not catch that. Could you try again?");
+      await whatsapp.sendText(message.from, "I didn't catch that. Could you try again?");
       return { status: "empty_message" };
     }
 
+    // Load existing conversation or create new one
+    // This will find conversations that are 'active' or 'waiting_for_approval'
     let conversation = await getActiveConversation(client.id);
-    if (!conversation) conversation = await createConversation(client.id);
+
+    if (conversation) {
+      logger.info("Continuing existing conversation", {
+        id: conversation.id,
+        status: conversation.status,
+        messageCount: (conversation.claude_messages as any[])?.length ?? 0,
+      });
+    } else {
+      conversation = await createConversation(client.id);
+      logger.info("Created new conversation", { id: conversation.id });
+    }
 
     const wp = new WordPressClient(client.wordpress_url, client.wp_api_key_encrypted, client.wp_api_secret_encrypted);
+
     const result = await runAgent({
       userMessage: userText,
       conversationId: conversation.id,
       priorMessages: (conversation.claude_messages ?? []) as any[],
+      // Pass pending image URL so agent knows about previously generated image
+      pendingImageUrl: conversation.pending_image_url ?? undefined,
       toolContext: { wp, whatsapp, clientPhone: message.from, clientId: client.id, conversationId: conversation.id },
       clientConfig: { name: client.name, siteUrl: client.wordpress_url, ...(client.system_prompt_config as Record<string, string>) },
     });

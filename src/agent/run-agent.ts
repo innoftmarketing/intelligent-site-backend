@@ -16,6 +16,7 @@ interface AgentInput {
   userMessage: string;
   conversationId: string;
   priorMessages: Anthropic.MessageParam[];
+  pendingImageUrl?: string;
   toolContext: ToolContext;
   clientConfig: { name: string; businessType?: string; language?: string; tone?: string; siteUrl: string };
 }
@@ -37,11 +38,13 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
   logger.info("Agent started", {
     userMessage: input.userMessage,
     priorMessagesCount: input.priorMessages.length,
+    hasPendingImage: !!input.pendingImageUrl,
   });
 
   const MAX_ITERATIONS = 15;
   let alreadySentWhatsApp = false;
-  let generatedImageUrl: string | undefined;
+  // Carry over the pending image from a previous conversation turn
+  let generatedImageUrl: string | undefined = input.pendingImageUrl;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     logger.info(`Claude API call - iteration ${i + 1}`);
@@ -66,33 +69,34 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     messages.push({ role: "assistant", content: response.content });
 
     if (response.stop_reason === "end_turn") {
-      // If an image was generated in this conversation, pause for approval
-      if (generatedImageUrl) {
-        logger.info("Pausing for image approval", { generatedImageUrl });
-        await updateConversation(input.conversationId, {
-          status: "waiting_for_approval",
-          pendingImageUrl: generatedImageUrl,
-          claudeMessages: messages,
-          pendingAction: { type: "image_approval", imageUrl: generatedImageUrl },
-        });
-        return { status: "waiting_for_approval", pendingImageUrl: generatedImageUrl };
+      const textBlocks = response.content.filter(
+        (b): b is Anthropic.TextBlock => b.type === "text"
+      );
+      const replyText = textBlocks.map((b) => b.text).join("\n");
+
+      // Check if Claude is asking a question or needs clarification (keep conversation open)
+      const isQuestion = replyText.includes("?") || replyText.toLowerCase().includes("which") || replyText.toLowerCase().includes("where");
+
+      if (!alreadySentWhatsApp && replyText.trim()) {
+        logger.info("Auto-sending WhatsApp reply");
+        try {
+          await input.toolContext.whatsapp.sendText(input.toolContext.clientPhone, replyText);
+          alreadySentWhatsApp = true;
+        } catch (err) {
+          logger.error("Failed to send reply", { error: String(err) });
+        }
       }
 
-      // No image — send text reply if Claude didn't already use send_whatsapp
-      if (!alreadySentWhatsApp) {
-        const textBlocks = response.content.filter(
-          (b): b is Anthropic.TextBlock => b.type === "text"
-        );
-        const replyText = textBlocks.map((b) => b.text).join("\n");
-
-        if (replyText.trim()) {
-          logger.info("Auto-sending WhatsApp reply");
-          try {
-            await input.toolContext.whatsapp.sendText(input.toolContext.clientPhone, replyText);
-          } catch (err) {
-            logger.error("Failed to send reply", { error: String(err) });
-          }
-        }
+      // Keep conversation active if there's a pending image or Claude asked a question
+      if (generatedImageUrl || isQuestion) {
+        logger.info("Keeping conversation active", { generatedImageUrl, isQuestion });
+        await updateConversation(input.conversationId, {
+          status: "waiting_for_approval",
+          pendingImageUrl: generatedImageUrl ?? null,
+          claudeMessages: messages,
+          pendingAction: generatedImageUrl ? { type: "image_approval", imageUrl: generatedImageUrl } : null,
+        });
+        return { status: "waiting_for_approval", pendingImageUrl: generatedImageUrl };
       }
 
       await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
@@ -121,11 +125,15 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
             alreadySentWhatsApp = true;
           }
 
-          // Track generated images for approval flow
           if (block.name === "generate_image") {
             const parsed = JSON.parse(result);
             generatedImageUrl = parsed.image_url;
-            alreadySentWhatsApp = true; // generate_image already sends the preview
+            alreadySentWhatsApp = true;
+          }
+
+          // If update_image or update_text was used, clear the pending image (action completed)
+          if (block.name === "update_image" || block.name === "update_text") {
+            generatedImageUrl = undefined;
           }
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
