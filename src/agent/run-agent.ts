@@ -47,6 +47,23 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     messages.push({ role: "assistant", content: response.content });
 
     if (response.stop_reason === "end_turn") {
+      // Claude finished with a text response — send it to the owner via WhatsApp
+      const textBlocks = response.content.filter(
+        (b): b is Anthropic.TextBlock => b.type === "text"
+      );
+      const replyText = textBlocks.map((b) => b.text).join("\n");
+
+      if (replyText.trim()) {
+        try {
+          await input.toolContext.whatsapp.sendText(
+            input.toolContext.clientPhone,
+            replyText
+          );
+        } catch (err) {
+          console.error("Failed to send WhatsApp reply:", err);
+        }
+      }
+
       await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
       return { status: "completed" };
     }
