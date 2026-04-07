@@ -67,8 +67,13 @@ export class WordPressClient {
     return this.request("POST", `/page/${pageId}/update`, { element_id: elementId, new_value: newValue });
   }
 
-  async uploadMedia(imageUrl: string, filename: string): Promise<{ mediaId: string; url: string }> {
-    return this.request("POST", "/media", { image_url: imageUrl, filename });
+  async uploadMedia(imageUrl: string, filename: string, targetWidth?: number, targetHeight?: number): Promise<{ mediaId: string; url: string }> {
+    const body: Record<string, unknown> = { image_url: imageUrl, filename };
+    if (targetWidth && targetHeight) {
+      body.target_width = targetWidth;
+      body.target_height = targetHeight;
+    }
+    return this.request("POST", "/media", body);
   }
 
   async getProducts(): Promise<Product[]> {
