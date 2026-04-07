@@ -74,9 +74,6 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
       );
       const replyText = textBlocks.map((b) => b.text).join("\n");
 
-      // Check if Claude is asking a question or needs clarification (keep conversation open)
-      const isQuestion = replyText.includes("?") || replyText.toLowerCase().includes("which") || replyText.toLowerCase().includes("where");
-
       if (!alreadySentWhatsApp && replyText.trim()) {
         logger.info("Auto-sending WhatsApp reply");
         try {
@@ -87,20 +84,16 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         }
       }
 
-      // Keep conversation active if there's a pending image or Claude asked a question
-      if (generatedImageUrl || isQuestion) {
-        logger.info("Keeping conversation active", { generatedImageUrl, isQuestion });
-        await updateConversation(input.conversationId, {
-          status: "waiting_for_approval",
-          pendingImageUrl: generatedImageUrl ?? null,
-          claudeMessages: messages,
-          pendingAction: generatedImageUrl ? { type: "image_approval", imageUrl: generatedImageUrl } : null,
-        });
-        return { status: "waiting_for_approval", pendingImageUrl: generatedImageUrl };
-      }
-
-      await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
-      return { status: "completed" };
+      // Always keep conversation open for follow-ups
+      // The timeout task will expire it after 48h of inactivity
+      logger.info("Keeping conversation active for follow-up");
+      await updateConversation(input.conversationId, {
+        status: "waiting_for_approval",
+        pendingImageUrl: generatedImageUrl ?? null,
+        claudeMessages: messages,
+        pendingAction: generatedImageUrl ? { type: "image_approval", imageUrl: generatedImageUrl } : null,
+      });
+      return { status: "waiting_for_approval", pendingImageUrl: generatedImageUrl };
     }
 
     if (response.stop_reason === "tool_use") {
