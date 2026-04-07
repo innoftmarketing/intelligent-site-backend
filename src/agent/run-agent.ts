@@ -41,6 +41,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
 
   const MAX_ITERATIONS = 15;
   let alreadySentWhatsApp = false;
+  let generatedImageUrl: string | undefined;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     logger.info(`Claude API call - iteration ${i + 1}`);
@@ -60,13 +61,24 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         ...(b.type === "text" ? { text: b.text.substring(0, 200) } : {}),
         ...(b.type === "tool_use" ? { tool: b.name } : {}),
       })),
-      usage: response.usage,
     });
 
     messages.push({ role: "assistant", content: response.content });
 
     if (response.stop_reason === "end_turn") {
-      // Only send the text reply if Claude didn't already use send_whatsapp
+      // If an image was generated in this conversation, pause for approval
+      if (generatedImageUrl) {
+        logger.info("Pausing for image approval", { generatedImageUrl });
+        await updateConversation(input.conversationId, {
+          status: "waiting_for_approval",
+          pendingImageUrl: generatedImageUrl,
+          claudeMessages: messages,
+          pendingAction: { type: "image_approval", imageUrl: generatedImageUrl },
+        });
+        return { status: "waiting_for_approval", pendingImageUrl: generatedImageUrl };
+      }
+
+      // No image — send text reply if Claude didn't already use send_whatsapp
       if (!alreadySentWhatsApp) {
         const textBlocks = response.content.filter(
           (b): b is Anthropic.TextBlock => b.type === "text"
@@ -74,30 +86,26 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         const replyText = textBlocks.map((b) => b.text).join("\n");
 
         if (replyText.trim()) {
-          logger.info("Auto-sending WhatsApp reply", { textPreview: replyText.substring(0, 200) });
+          logger.info("Auto-sending WhatsApp reply");
           try {
             await input.toolContext.whatsapp.sendText(input.toolContext.clientPhone, replyText);
           } catch (err) {
-            logger.error("Failed to send WhatsApp reply", { error: String(err) });
+            logger.error("Failed to send reply", { error: String(err) });
           }
         }
       }
 
       await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
-      logger.info("Agent completed");
       return { status: "completed" };
     }
 
     if (response.stop_reason === "tool_use") {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
-      let sentImagePreview = false;
-      let pendingImageUrl: string | undefined;
 
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
         const tool = findTool(block.name);
         if (!tool) {
-          logger.error(`Unknown tool: ${block.name}`);
           toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: Unknown tool "${block.name}"`, is_error: true });
           continue;
         }
@@ -109,17 +117,15 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
           logger.info(`Tool result: ${block.name}`, { preview: result.substring(0, 300) });
           toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 
-          // Track if send_whatsapp was used
           if (block.name === "send_whatsapp") {
             alreadySentWhatsApp = true;
           }
 
+          // Track generated images for approval flow
           if (block.name === "generate_image") {
             const parsed = JSON.parse(result);
-            pendingImageUrl = parsed.image_url;
-          }
-          if (block.name === "send_whatsapp" && (block.input as any).image_url) {
-            sentImagePreview = true;
+            generatedImageUrl = parsed.image_url;
+            alreadySentWhatsApp = true; // generate_image already sends the preview
           }
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -129,26 +135,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
       }
 
       messages.push({ role: "user", content: toolResults });
-
-      if (sentImagePreview && pendingImageUrl) {
-        const assistantText = response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
-          .map((b) => b.text).join(" ").toLowerCase();
-        const isAskingApproval = ["should i", "apply", "approve", "confirm", "want me to", "go ahead"].some((kw) => assistantText.includes(kw));
-
-        if (isAskingApproval) {
-          logger.info("Pausing for approval", { pendingImageUrl });
-          await updateConversation(input.conversationId, {
-            status: "waiting_for_approval", pendingImageUrl,
-            claudeMessages: messages, pendingAction: { type: "image_approval" },
-          });
-          return { status: "waiting_for_approval", pendingImageUrl };
-        }
-      }
     }
   }
 
-  logger.warn("Max iterations reached");
   await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
   return { status: "completed" };
 }
