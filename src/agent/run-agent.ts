@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "@trigger.dev/sdk";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { getToolSpecs, findTool, type ToolContext } from "./tools/index.js";
 import { updateConversation } from "../services/conversation.js";
@@ -33,9 +34,19 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     { role: "user", content: input.userMessage },
   ];
 
+  logger.info("Agent started", {
+    userMessage: input.userMessage,
+    clientConfig: input.clientConfig,
+    priorMessagesCount: input.priorMessages.length,
+  });
+
   const MAX_ITERATIONS = 15;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    logger.info(`Claude API call - iteration ${i + 1}`, {
+      messageCount: messages.length,
+    });
+
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 4096,
@@ -44,27 +55,45 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
       messages,
     });
 
+    logger.info("Claude response received", {
+      stopReason: response.stop_reason,
+      contentBlocks: response.content.map((b) => ({
+        type: b.type,
+        ...(b.type === "text" ? { text: b.text.substring(0, 200) } : {}),
+        ...(b.type === "tool_use" ? { toolName: b.name, input: b.input } : {}),
+      })),
+      usage: response.usage,
+    });
+
     messages.push({ role: "assistant", content: response.content });
 
     if (response.stop_reason === "end_turn") {
-      // Claude finished with a text response — send it to the owner via WhatsApp
       const textBlocks = response.content.filter(
         (b): b is Anthropic.TextBlock => b.type === "text"
       );
       const replyText = textBlocks.map((b) => b.text).join("\n");
 
       if (replyText.trim()) {
+        logger.info("Sending WhatsApp reply", {
+          to: input.toolContext.clientPhone,
+          textPreview: replyText.substring(0, 200),
+        });
+
         try {
           await input.toolContext.whatsapp.sendText(
             input.toolContext.clientPhone,
             replyText
           );
+          logger.info("WhatsApp reply sent successfully");
         } catch (err) {
-          console.error("Failed to send WhatsApp reply:", err);
+          logger.error("Failed to send WhatsApp reply", {
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 
       await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
+      logger.info("Agent completed", { status: "completed" });
       return { status: "completed" };
     }
 
@@ -77,11 +106,20 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         if (block.type !== "tool_use") continue;
         const tool = findTool(block.name);
         if (!tool) {
+          logger.error(`Unknown tool: ${block.name}`);
           toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: Unknown tool "${block.name}"`, is_error: true });
           continue;
         }
+
+        logger.info(`Executing tool: ${block.name}`, { input: block.input });
+
         try {
           const result = await tool.execute(block.input as Record<string, unknown>, input.toolContext);
+
+          logger.info(`Tool result: ${block.name}`, {
+            resultPreview: result.substring(0, 300),
+          });
+
           toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 
           if (block.name === "generate_image") {
@@ -92,7 +130,9 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
             sentImagePreview = true;
           }
         } catch (error) {
-          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${error instanceof Error ? error.message : String(error)}`, is_error: true });
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.error(`Tool error: ${block.name}`, { error: errorMsg });
+          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${errorMsg}`, is_error: true });
         }
       }
 
@@ -105,6 +145,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         const isAskingApproval = ["should i", "apply", "approve", "confirm", "want me to", "go ahead"].some((kw) => assistantText.includes(kw));
 
         if (isAskingApproval) {
+          logger.info("Pausing for approval", { pendingImageUrl });
           await updateConversation(input.conversationId, {
             status: "waiting_for_approval", pendingImageUrl,
             claudeMessages: messages, pendingAction: { type: "image_approval" },
@@ -115,6 +156,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     }
   }
 
+  logger.warn("Agent reached max iterations");
   await updateConversation(input.conversationId, { status: "completed", claudeMessages: messages });
   return { status: "completed" };
 }
