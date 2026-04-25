@@ -18,7 +18,7 @@ const envSchema = z.object({
   SMART_CRM_TRIGGER_URL: z
     .string()
     .url()
-    .default("https://trigger.innoft.link/api/v3/tasks/handle-whatsapp-message/trigger"),
+    .default("https://trigger.innoft.link/api/v1/tasks/handle-whatsapp-message/trigger"),
   SMART_CRM_TRIGGER_KEY: z.string().min(1),
 });
 
