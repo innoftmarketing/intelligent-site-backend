@@ -11,6 +11,15 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1),
   MASTER_ENCRYPTION_KEY: z.string().length(64),
   PORT: z.string().default("3200"),
+  // SMART-CRM routing (added 2026-04-25): when a WhatsApp user picks "1"
+  // (CRM mode), the webhook server triggers the SMART-CRM project's
+  // handle-whatsapp-message task via direct HTTP to Trigger.dev's API.
+  // Different project, different secret key than the website agent.
+  SMART_CRM_TRIGGER_URL: z
+    .string()
+    .url()
+    .default("https://trigger.innoft.link/api/v3/tasks/handle-whatsapp-message/trigger"),
+  SMART_CRM_TRIGGER_KEY: z.string().min(1),
 });
 
 type Env = z.infer<typeof envSchema>;

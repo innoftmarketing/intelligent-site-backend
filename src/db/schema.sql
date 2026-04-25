@@ -52,3 +52,16 @@ CREATE TABLE IF NOT EXISTS change_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_changelog_client ON change_log(client_id);
+
+-- Conversation routing: which agent (CRM or WEB) should receive each
+-- WhatsApp number's messages. Bot asks "1 ou 2?" once, then remembers the
+-- choice for 30 minutes of activity. /switch or /menu resets it.
+CREATE TABLE IF NOT EXISTS conversation_routing (
+    wa_number TEXT PRIMARY KEY,
+    state TEXT NOT NULL
+        CHECK (state IN ('awaiting_choice', 'active_crm', 'active_web')),
+    pending_payload JSONB,
+    last_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_routing_last_at ON conversation_routing(last_at);

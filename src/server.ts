@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { tasks } from "@trigger.dev/sdk";
 import { EvolutionProvider } from "./providers/whatsapp/evolution.js";
 import { env } from "./env.js";
+import { routeIncoming } from "./services/router.js";
 import type { processMessage } from "./trigger/process-message.js";
 
 const app = new Hono();
@@ -21,10 +22,34 @@ app.post("/webhook/whatsapp", async (c) => {
 
   const body = JSON.parse(rawBody);
   const message = whatsapp.parseWebhook(body);
-
   if (!message) return c.json({ ok: true });
 
-  await tasks.trigger<typeof processMessage>("process-whatsapp-message", { message });
+  // Routing prompts only deal with text. Non-text payloads (audio, image)
+  // bypass the router and go straight to the website agent so existing
+  // voice-note and image-edit flows keep working.
+  if (message.type !== "text" || !message.text) {
+    await tasks.trigger<typeof processMessage>("process-whatsapp-message", { message });
+    return c.json({ ok: true });
+  }
+
+  try {
+    await routeIncoming({
+      whatsapp,
+      waNumber: message.from,
+      text: message.text,
+      rawBody: body,
+    });
+  } catch (err) {
+    console.error("[router] error:", err);
+    try {
+      await whatsapp.sendText(
+        message.from,
+        "Oups, un souci technique de mon côté. Réessaie dans une minute.",
+      );
+    } catch {
+      // best-effort
+    }
+  }
 
   return c.json({ ok: true });
 });
