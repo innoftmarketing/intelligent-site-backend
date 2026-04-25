@@ -60,9 +60,28 @@ function isExpired(lastAt: Date): boolean {
 }
 
 function parseChoice(text: string): "CRM" | "WEB" | null {
+  // Lenient match — works for typed "1" / "2" and for transcribed voice
+  // ("le CRM", "premier choix", "site web s'il te plaît", etc.). Order
+  // matters: CRM keywords are checked first because "site" can appear
+  // around "CRM" in some sentences.
   const t = text.trim().toLowerCase();
-  if (t === "1" || t.startsWith("1 ") || t === "crm") return "CRM";
-  if (t === "2" || t.startsWith("2 ") || t === "site" || t === "site web" || t === "web" || t === "website") {
+  // Strip diacritics so "premiére" and "première" both match.
+  const norm = t.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const has = (needle: string) => new RegExp(`\\b${needle}\\b`).test(norm);
+
+  if (has("crm") || has("agent crm") || has("1") || has("un") || has("premier") || has("premiere")) {
+    return "CRM";
+  }
+  if (
+    has("site") ||
+    has("web") ||
+    has("website") ||
+    has("wordpress") ||
+    has("2") ||
+    has("deux") ||
+    has("deuxieme") ||
+    has("second")
+  ) {
     return "WEB";
   }
   return null;
